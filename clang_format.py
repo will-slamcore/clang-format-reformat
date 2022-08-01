@@ -1,51 +1,37 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from __future__ import print_function, absolute_import
 
-import difflib
-import glob
 import os
 import re
-import shutil
-import string
 import subprocess
 import sys
-import tarfile
-import tempfile
-import threading
-import urllib2
-from distutils import spawn  # pylint: disable=no-name-in-module
 from optparse import OptionParser
-from multiprocessing import cpu_count
 
 # Get relative imports to work when the package is not installed on the PYTHONPATH.
 if __name__ == "__main__" and __package__ is None:
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(os.path.realpath(__file__)))))
 
 import git  # pylint: disable=wrong-import-position
-#from buildscripts.linter import parallel  # pylint: disable=wrong-import-position
 
 ##############################################################################
+
+REFORMAT_SHA="7d8be1fd07f31951a07d11eeecd5cfdaa360aa12"
+TARGET_BRANCH="master"
+
 class ClangFormat(object):
     """ClangFormat class."""
 
     def __init__(self):  # pylint: disable=too-many-branches
         """Initialize ClangFormat."""
-        self.path = None
-        if not os.path.isfile("mach"):
-            print("WARNING: Could not find mach")
-            raise Exception("mach not found")
-        self.path = os.path.abspath("mach")
-
-        self.print_lock = threading.Lock()
 
     def format(self, file_name):
         # Update the file with clang-format
-        formatted = not subprocess.call([self.path, "clang-format", "-p", file_name])
+        formatted = not subprocess.call(["clang-format", "-style=file", "-i", file_name])
 
         return formatted
 
 
-FILES_RE = re.compile('\\.(h|hpp|ipp|cpp|js)$')
+FILES_RE = re.compile('^slamcore\\/.*\\.(hpp|cpp)$')
 
 
 def is_interesting_file(file_name):
@@ -59,7 +45,7 @@ def get_list_from_lines(lines):
 
 
 def reformat_branch(  # pylint: disable=too-many-branches,too-many-locals,too-many-statements
-        clang_format, commit_prior_to_reformat, commit_after_reformat, target_branch):
+        commit_prior_to_reformat, commit_after_reformat, target_branch):
     """Reformat a branch made before a clang-format run."""
     clang_format = ClangFormat()
 
@@ -98,9 +84,7 @@ def reformat_branch(  # pylint: disable=too-many-branches,too-many-locals,too-ma
     merge_base = repo.get_merge_base(commit_prior_to_reformat)
 
     if not merge_base == commit_prior_to_reformat:
-        raise ValueError(
-            "Please rebase to '%s' and resolve all conflicts before running this script" %
-            (commit_prior_to_reformat))
+        exit(f"Please rebase to '{commit_prior_to_reformat}' and resolve all conflicts before running this script")
 
     # We assume the target branch is master, it could be a different branch if needed for testing
     merge_base = repo.get_merge_base(target_branch)
@@ -114,17 +98,13 @@ def reformat_branch(  # pylint: disable=too-many-branches,too-many-locals,too-ma
     new_branch = "%s-reformatted" % branch_name
 
     if repo.does_branch_exist(new_branch):
-        raise ValueError(
-            "The branch '%s' already exists. Please delete the branch '%s', or rename the current branch."
-            % (new_branch, new_branch))
+        exit(f"The branch '{new_branch}' already exists. Please delete the branch '{new_branch}', or rename the current branch.")
 
     commits = get_list_from_lines(
         repo.git_log(["--reverse", "--pretty=format:%H",
                       "%s..HEAD" % commit_prior_to_reformat]))
 
     previous_commit_base = commit_after_reformat
-
-    files_match = re.compile('\\.(h|cpp|c|cc)$')
 
     # Go through all the commits the user made on the local branch and migrate to a new branch
     # that is based on post_reformat commits instead
@@ -145,7 +125,7 @@ def reformat_branch(  # pylint: disable=too-many-branches,too-many-locals,too-ma
                 deleted_files.append(commit_file)
                 continue
 
-            if files_match.search(commit_file):
+            if is_interesting_file(commit_file):
                 clang_format.format(commit_file)
             else:
                 print("Skipping file '%s' since it is not a file clang_format should format" %
@@ -213,28 +193,7 @@ def usage():
 
 def main():
     """Execute Main entry point."""
-    parser = OptionParser()
-    parser.add_option("-c", "--clang-format", type="string", dest="clang_format")
-
-    (options, args) = parser.parse_args(args=sys.argv)
-
-    if len(args) > 1:
-        command = args[1]
-
-        if command == "reformat-branch":
-
-            if len(args) < 4:
-                print(
-                    "ERROR: reformat-branch takes three parameters: commit_prior_to_reformat commit_after_reformat target_branch"
-                )
-                return
-
-            reformat_branch(options.clang_format, args[2], args[3], args[4])
-        else:
-            usage()
-    else:
-        usage()
-
+    reformat_branch(REFORMAT_SHA + '~', REFORMAT_SHA, TARGET_BRANCH)
 
 if __name__ == "__main__":
     main()

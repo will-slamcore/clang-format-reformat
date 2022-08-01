@@ -1,1 +1,1 @@
-typing
+clang-format~=14.0
