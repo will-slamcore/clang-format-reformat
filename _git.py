@@ -242,7 +242,7 @@ class Repository(object):  # pylint: disable=too-many-public-methods
                 LOGGER.error("Output of '%s': %s", " ".join(params), stdout)
             if stderr:
                 LOGGER.error("Error output of '%s': %s", " ".join(params), stderr)
-        return GitCommandResult(cmd, params, process.returncode, stdout=stdout, stderr=stderr)
+        return GitCommandResult(cmd, params, process.returncode, stdout=stdout.decode("utf-8"), stderr=stderr.decode("utf-8"))
 
 
 class GitException(Exception):
